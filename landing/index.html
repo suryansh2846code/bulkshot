@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BulkShot — Where Prompts Meet Pixels</title>
+<meta name="description" content="BulkShot turns one prompt template into hundreds of images. Bulk-generate with ChatGPT and Gemini right inside your browser. Free and open source." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23ECE6D8'/%3E%3Crect x='20' y='20' width='26' height='26' rx='6' fill='%2329261B'/%3E%3Crect x='54' y='20' width='26' height='26' rx='6' fill='%2329261B'/%3E%3Crect x='20' y='54' width='26' height='26' rx='6' fill='%2329261B'/%3E%3Crect x='54' y='54' width='26' height='26' rx='6' fill='%233E8DA6'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script>
+  // Set theme before first paint to avoid a flash.
+  (function () {
+    try {
+      var saved = localStorage.getItem('bulkshot-theme');
+      var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', saved || (dark ? 'dusk' : 'paper'));
+    } catch (e) {}
+  })();
+</script>
+<style>
+  /* ---- Paper (warm, light) ---- */
+  :root {
+    --hero: oklch(0.905 0.028 165);
+    --heroTop: oklch(0.945 0.022 160);
+    --ink: oklch(0.33 0.045 165);
+    --soft: oklch(0.46 0.03 162);
+    --muted: oklch(0.52 0.025 160);
+    --line: oklch(0.83 0.02 162);
+    --band: oklch(0.86 0.03 178);
+    --accent: oklch(0.70 0.135 32);
+    --page: oklch(0.965 0.006 230);
+    --surface: #fff;
+    --tileHi: color-mix(in oklch, var(--accent) 16%, var(--surface));
+    --mono: 'Space Mono', ui-monospace, monospace;
+    --head: 'Martian Mono', 'Space Mono', monospace;
+  }
+  /* ---- Dusk (dark) ---- */
+  [data-theme="dusk"] {
+    --hero: oklch(0.31 0.025 250);
+    --heroTop: oklch(0.35 0.025 250);
+    --ink: oklch(0.93 0.015 86);
+    --soft: oklch(0.74 0.02 230);
+    --muted: oklch(0.66 0.02 235);
+    --line: oklch(0.40 0.02 250);
+    --band: oklch(0.24 0.02 250);
+    --accent: oklch(0.68 0.10 205);
+    --page: oklch(0.20 0.02 252);
+    --surface: oklch(0.29 0.022 252);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; background: var(--page); scroll-behavior: smooth; }
+  body { font-family: var(--mono); color: var(--ink); transition: background .25s ease; }
+  a { color: inherit; }
+  .wrap { display: flex; justify-content: center; padding: 26px 26px 40px; }
+  .card { width: 100%; max-width: 1200px; background: var(--surface); border-radius: 26px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(20,40,30,.04), 0 24px 60px -30px rgba(20,40,30,.28); border: 1px solid var(--line); }
+
+  .hero { position: relative; background: linear-gradient(var(--heroTop), var(--hero)); }
+  .speck { position: absolute; border-radius: 1px; background: var(--accent); pointer-events: none; }
+
+  nav { position: relative; z-index: 2; display: flex; align-items: center; gap: 16px; padding: 22px 34px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .pixmark { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 18px; height: 18px; }
+  .pixmark span { border-radius: 1px; }
+  .brand strong { font-family: var(--head); font-size: 16px; letter-spacing: -.01em; color: var(--ink); }
+  .navlinks { margin-left: auto; display: flex; align-items: center; gap: 24px; }
+  .navlinks a { font-size: 13px; color: var(--soft); text-decoration: none; }
+  .navlinks a:hover { color: var(--ink); }
+
+  .pill { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 14px; font-weight: 700;
+    padding: 13px 22px; border-radius: 999px; cursor: pointer; white-space: nowrap; text-decoration: none; transition: transform .12s ease; }
+  .pill:hover { transform: translateY(-1px); }
+  .pill.primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); box-shadow: 0 1px 0 rgba(0,0,0,.06); }
+  .pill.ghost { background: var(--surface); color: var(--ink); border: 1px solid color-mix(in oklch, var(--ink) 16%, transparent); box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+  .toggle { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+
+  .herocopy { position: relative; z-index: 2; text-align: center; padding: 34px 24px 8px; }
+  .herocopy h1 { margin: 0 auto; max-width: 760px; font-family: var(--head); font-size: 52px; line-height: 1.08;
+    font-weight: 700; letter-spacing: -.02em; color: var(--ink); text-wrap: balance; }
+  .lede { margin: 22px auto 0; max-width: 560px; font-size: 13.5px; line-height: 1.75; color: var(--muted); }
+
+  .features { display: flex; gap: 28px; max-width: 800px; margin: 40px auto 0; justify-content: center; }
+  .feature { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+  .feature .ico { font-size: 26px; line-height: 1; filter: saturate(.9); }
+  .feature h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .02em; color: var(--ink); }
+  .feature p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--muted); max-width: 220px; }
+
+  .ctas { display: flex; gap: 14px; justify-content: center; margin: 40px 0 8px; flex-wrap: wrap; }
+
+  .band { position: relative; margin-top: 24px; background: var(--band); line-height: 0; }
+  .hero-img { width: 100%; height: auto; display: block; }
+  .hero-img.dusk { display: none; }
+  [data-theme="dusk"] .hero-img.paper { display: none; }
+  [data-theme="dusk"] .hero-img.dusk { display: block; }
+
+  section { background: var(--surface); }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 36px; flex-wrap: wrap; }
+  .kicker { font-size: 12px; color: var(--accent); font-weight: 700; letter-spacing: .08em; }
+  .sec-head h2 { margin: 0; font-family: var(--head); font-size: 30px; font-weight: 700; color: var(--ink); letter-spacing: -.02em; }
+
+  .steps { display: flex; gap: 40px; }
+  .step { display: flex; flex-direction: column; gap: 12px; flex: 1 1 0; }
+  .step .n { width: 30px; height: 30px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line);
+    display: grid; place-items: center; font-family: var(--head); font-weight: 700; font-size: 13px; color: var(--accent); }
+  .step .row { display: flex; align-items: center; gap: 10px; }
+  .step .row .rule { height: 1px; flex: 1; background: var(--line); }
+  .step h4 { margin: 0; font-family: var(--head); font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+  .step p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+
+  .mock { border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--heroTop); }
+  .mock .tb { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .mock .tb i { width: 11px; height: 11px; border-radius: 999px; display: inline-block; }
+  .mock .tb .t { margin-left: 10px; font-size: 12px; color: var(--muted); }
+  .mock .body { padding: 22px; display: grid; grid-template-columns: 200px 1fr; gap: 18px; }
+  .mock .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px; }
+  .mock .lbl { font-size: 10px; font-weight: 700; letter-spacing: .07em; color: var(--muted); margin-bottom: 10px; }
+  .mock .barRow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--soft); }
+  .mock .bar { flex: 1; height: 9px; border-radius: 999px; background: color-mix(in oklch, var(--accent) 18%, var(--surface)); overflow: hidden; }
+  .mock .bar i { display: block; height: 100%; background: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line);
+    background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--band) 60%, var(--surface)), color-mix(in oklch, var(--band) 60%, var(--surface)) 7px, var(--surface) 7px, var(--surface) 14px);
+    position: relative; }
+  .tile.done { background: var(--tileHi); border-color: color-mix(in oklch, var(--accent) 40%, var(--line)); }
+  .tile::after { content: ''; position: absolute; left: 8px; bottom: 8px; width: 26px; height: 5px; border-radius: 3px; background: color-mix(in oklch, var(--ink) 30%, transparent); }
+
+  .strip { background: var(--hero); border-radius: 18px; padding: 34px 40px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .strip h3 { margin: 0; font-family: var(--head); font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+  .strip p { margin: 10px 0 0; font-size: 13px; line-height: 1.7; color: var(--soft); max-width: 420px; }
+  .chip { font-size: 13px; font-weight: 700; color: var(--ink); background: var(--surface); border: 1px solid var(--line); padding: 12px 18px; border-radius: 12px; }
+
+  .finalcta { position: relative; overflow: hidden; border-radius: 22px; background: linear-gradient(var(--heroTop), var(--hero));
+    border: 1px solid var(--line); padding: 56px 24px; text-align: center; }
+  .finalcta h2 { position: relative; margin: 0; font-family: var(--head); font-size: 34px; font-weight: 700; color: var(--ink); letter-spacing: -.02em; }
+  .finalcta p { position: relative; margin: 16px auto 28px; max-width: 480px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+  .install { position: relative; margin: 22px auto 0; max-width: 560px; font-size: 12px; color: var(--soft);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-align: left; line-height: 1.9; }
+  .install code { color: var(--ink); }
+
+  footer { padding: 28px 56px 34px; background: var(--surface); border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  footer .links { display: flex; gap: 22px; margin-left: 12px; }
+  footer a { font-size: 12.5px; color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+  .madein { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+  .reveal { opacity: 0; transform: translateY(18px); }
+  .reveal.in { opacity: 1; transform: none; transition: opacity .6s ease, transform .6s ease; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1 !important; transform: none !important; } }
+
+  @media (max-width: 820px) {
+    .herocopy h1 { font-size: 38px; }
+    .features, .steps, .mock .body { flex-direction: column; }
+    .mock .body { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+    nav { flex-wrap: wrap; }
+    .navlinks { gap: 16px; }
+    section, footer { padding-left: 28px !important; padding-right: 28px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+
+    <!-- HERO -->
+    <div class="hero">
+      <span class="speck" style="top:40px;left:90px;width:10px;height:10px;opacity:.6"></span>
+      <span class="speck" style="top:88px;left:220px;width:7px;height:7px;opacity:.4"></span>
+      <span class="speck" style="top:12px;left:320px;width:8px;height:8px;opacity:.5"></span>
+      <span class="speck" style="top:78px;right:70px;width:6px;height:6px;opacity:.45"></span>
+      <span class="speck" style="top:30px;right:250px;width:9px;height:9px;opacity:.35"></span>
+
+      <nav>
+        <div class="brand">
+          <span class="pixmark"><span style="background:var(--ink)"></span><span style="background:var(--ink);opacity:.55"></span><span style="background:var(--ink);opacity:.55"></span><span style="background:var(--accent)"></span></span>
+          <strong>BulkShot</strong>
+        </div>
+        <div class="navlinks">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="https://github.com/suryansh2846code/bulk-shot-">GitHub</a>
+        </div>
+        <button class="toggle" id="themeBtn" type="button" aria-label="Toggle theme">☀︎ Paper</button>
+        <a class="pill primary" href="https://github.com/suryansh2846code/bulk-shot-">View on GitHub →</a>
+      </nav>
+
+      <div class="herocopy">
+        <h1 class="reveal">Where Prompts<br />Meet Pixels.</h1>
+        <p class="lede reveal">Generate hundreds of images in one calm sweep. Write a prompt template, drop in your variables, and let ChatGPT and Gemini fill the canvas — right inside your browser.</p>
+
+        <div class="features reveal" id="features">
+          <div class="feature"><div class="ico">🧩</div><h3>Bulk Prompts</h3><p>Turn one template into hundreds of variations with a simple {} placeholder.</p></div>
+          <div class="feature"><div class="ico">🌿</div><h3>Two Models</h3><p>Generate with ChatGPT · DALL·E and Gemini · Imagen, split across parallel workers.</p></div>
+          <div class="feature"><div class="ico">📦</div><h3>Auto Download</h3><p>Each image saves itself the moment it's done — no manual right-clicking.</p></div>
+        </div>
+
+        <div class="ctas reveal">
+          <a class="pill primary" href="https://github.com/suryansh2846code/bulk-shot-">View on GitHub →</a>
+          <a class="pill ghost" href="#how">See how it works</a>
+        </div>
+      </div>
+
+      <div class="band">
+        <img class="hero-img paper" src="hero-paper.png" alt="Scattered image thumbnails on a sunlit desk flowing into a tidy warm-toned grid" loading="eager" />
+        <img class="hero-img dusk" src="hero-dusk.png" alt="Scattered portraits on a dark desk flowing into a tidy grid" loading="eager" />
+      </div>
+    </div>
+
+    <!-- HOW IT WORKS -->
+    <section id="how" style="padding:64px 56px">
+      <div class="sec-head reveal">
+        <span class="kicker">// HOW IT WORKS</span>
+        <h2>Three quiet steps.</h2>
+      </div>
+      <div class="steps">
+        <div class="step reveal"><div class="row"><span class="n">01</span><span class="rule"></span></div><h4>Write a template</h4><p>One prompt with a {} where the name goes. Paste your list of subjects — poses, products, names — one per line or from a PDF.</p></div>
+        <div class="step reveal"><div class="row"><span class="n">02</span><span class="rule"></span></div><h4>Pick your models</h4><p>Send the batch to ChatGPT, Gemini, or both at once. Set how many parallel workers each provider runs, then start the queue.</p></div>
+        <div class="step reveal"><div class="row"><span class="n">03</span><span class="rule"></span></div><h4>Watch &amp; collect</h4><p>The monitor fills in real time. Completed images auto-download, failures retry, and rate limits never derail the run.</p></div>
+      </div>
+    </section>
+
+    <!-- WORKSPACE PREVIEW -->
+    <section style="padding:20px 56px 64px">
+      <div class="mock reveal">
+        <div class="tb"><i style="background:#e7a6a0"></i><i style="background:#e9d39b"></i><i style="background:#a9cdb0"></i><span class="t">BulkShot — workspace</span></div>
+        <div class="body">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="panel"><div class="lbl">PROVIDERS</div>
+              <div class="barRow"><span style="width:30px">gpt</span><span class="bar"><i style="width:70%"></i></span></div>
+              <div class="barRow"><span style="width:30px">gem</span><span class="bar"><i style="width:40%"></i></span></div>
+            </div>
+            <div class="panel"><div class="lbl">PROGRESS — 75%</div>
+              <div class="bar"><i style="width:75%"></i></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="lbl">QUEUE — 12 JOBS</div>
+            <div class="grid">
+              <div class="tile done"></div><div class="tile done"></div><div class="tile done"></div><div class="tile"></div>
+              <div class="tile done"></div><div class="tile"></div><div class="tile done"></div><div class="tile"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODELS STRIP -->
+    <section style="padding:0 56px 56px">
+      <div class="strip reveal">
+        <div style="flex:1 1 280px">
+          <h3>Two engines, one queue.</h3>
+          <p>Use your own logged-in ChatGPT and Gemini tabs. BulkShot splits each batch across the models you choose and automates the whole thing in the background.</p>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <span class="chip">ChatGPT · DALL·E</span>
+          <span class="chip">Gemini · Imagen</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section style="padding:0 56px 64px">
+      <div class="finalcta reveal">
+        <span class="speck" style="top:30px;left:60px;width:9px;height:9px;opacity:.4"></span>
+        <span class="speck" style="bottom:40px;right:80px;width:7px;height:7px;opacity:.45"></span>
+        <h2>Fill the canvas, calmly.</h2>
+        <p>BulkShot is free and open source. Clone it, load it unpacked, and turn a single prompt into a whole gallery — without leaving your tab.</p>
+        <div style="position:relative;display:flex;justify-content:center;gap:14px;flex-wrap:wrap">
+          <a class="pill primary" href="https://github.com/suryansh2846code/bulk-shot-">Get BulkShot on GitHub →</a>
+        </div>
+        <div class="install">
+          <strong>Install (load unpacked):</strong><br />
+          <code>git clone https://github.com/suryansh2846code/bulk-shot-.git</code><br />
+          <code>npm install &amp;&amp; npm run build</code> → open <code>chrome://extensions</code> → enable Developer mode → <code>Load unpacked</code> → select <code>build/chrome-mv3-prod</code>.
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="brand">
+        <span class="pixmark"><span style="background:var(--ink)"></span><span style="background:var(--ink);opacity:.55"></span><span style="background:var(--ink);opacity:.55"></span><span style="background:var(--accent)"></span></span>
+        <strong style="font-family:var(--head);font-size:14px;color:var(--ink)">BulkShot</strong>
+      </div>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/suryansh2846code/bulk-shot-">GitHub</a>
+        <a href="https://github.com/suryansh2846code/bulk-shot-/blob/main/README.md">Docs</a>
+      </div>
+      <span class="madein">Free &amp; open source · <a href="https://github.com/suryansh2846code">@suryansh2846code</a> · 2026</span>
+    </footer>
+
+  </div>
+</div>
+
+<script>
+  // Theme toggle (Paper / Dusk) — persists choice; swaps hero illustration.
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    function label() {
+      var dusk = document.documentElement.getAttribute('data-theme') === 'dusk';
+      btn.textContent = dusk ? '☾ Dusk' : '☀︎ Paper';
+    }
+    label();
+    btn.addEventListener('click', function () {
+      var dusk = document.documentElement.getAttribute('data-theme') === 'dusk';
+      var next = dusk ? 'paper' : 'dusk';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('bulkshot-theme', next); } catch (e) {}
+      label();
+    });
+  })();
+
+  // Reveal-on-scroll
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { threshold: 0.12 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
+</body>
+</html>

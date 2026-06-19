@@ -1,0 +1,167 @@
+export interface ChatGPTSelectors {
+  textarea: string[];
+  sendButton: string[];
+  loadingIndicator: string[];
+  chatgptImage: string[];
+  errorMsg: string[];
+  rateLimitMsg: string[];
+}
+
+export const SELECTORS: ChatGPTSelectors = {
+  textarea: [
+    '#prompt-textarea',
+    'textarea',
+    'div[contenteditable="true"]',
+    '[contenteditable="true"]',
+  ],
+  sendButton: [
+    'button[data-testid$="send-button"]',
+    'button[data-testid*="send"]',
+    'button[aria-label*="Send"]',
+    'button[aria-label*="send"]',
+    'button[type="submit"]',
+    '#prompt-textarea + button',
+    'div[contenteditable="true"] + button',
+  ],
+  loadingIndicator: [
+    'button[data-testid="stop-button"]',
+    'button[aria-label*="Stop"]',
+    'button[aria-label*="stop"]',
+    '.loading',
+    '.generating',
+  ],
+  chatgptImage: [
+    'img[src*="oaiusercontent.com"]',
+    'img[src*="files.oaiusercontent.com"]',
+    'div[class*="markdown"] img',
+    'div.agent-response img',
+    'img[alt*="Generated"]',
+    'img[src^="blob:"]',
+  ],
+  errorMsg: [
+    '.error-message',
+    'div[class*="error"]',
+    'div.text-red-500',
+  ],
+  rateLimitMsg: [
+    'div[class*="rate-limit"]',
+    'div[class*="quota"]',
+    'div[class*="limit"]',
+  ]
+};
+
+function querySelectorIncludingShadows(selector: string, root: Document | ShadowRoot = document): HTMLElement | null {
+  try {
+    const el = root.querySelector(selector) as HTMLElement;
+    if (el) return el;
+  } catch (e) {
+    // Ignore invalid selector errors during traversal
+  }
+
+  const elements = root.querySelectorAll('*');
+  for (let i = 0; i < elements.length; i++) {
+    const shadow = elements[i].shadowRoot;
+    if (shadow) {
+      const found = querySelectorIncludingShadows(selector, shadow);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+export function queryAllIncludingShadows(selector: string, root: Document | ShadowRoot | HTMLElement, results: HTMLElement[]) {
+  try {
+    const elements = root.querySelectorAll(selector);
+    elements.forEach((el) => {
+      if (!results.includes(el as HTMLElement)) {
+        results.push(el as HTMLElement);
+      }
+    });
+  } catch (e) {
+    // Ignore invalid selector errors
+  }
+
+  const allElements = root.querySelectorAll('*');
+  for (let i = 0; i < allElements.length; i++) {
+    const shadow = allElements[i].shadowRoot;
+    if (shadow) {
+      queryAllIncludingShadows(selector, shadow, results);
+    }
+  }
+}
+
+/**
+ * Finds the first element matching any of the selectors in the list, searching deep inside shadow DOMs.
+ */
+export function queryAny(selectors: string[]): HTMLElement | null {
+  for (const selector of selectors) {
+    try {
+      const el = querySelectorIncludingShadows(selector);
+      if (el) return el;
+    } catch (e) {
+      console.warn('Selector error:', selector, e);
+    }
+  }
+  return null;
+}
+
+/**
+ * Finds all elements matching any of the selectors in the list, searching deep inside shadow DOMs.
+ */
+export function queryAllAny(selectors: string[]): HTMLElement[] {
+  const results: HTMLElement[] = [];
+  for (const selector of selectors) {
+    try {
+      queryAllIncludingShadows(selector, document, results);
+    } catch (e) {
+      console.warn('Selector error:', selector, e);
+    }
+  }
+  return results;
+}
+
+/**
+ * Checks if the page contains specific error texts as fallback.
+ */
+export function findErrorText(initialText: string, prompt: string): string | null {
+  const pageText = document.body.innerText || '';
+  const errorPhrases = [
+    'An error occurred',
+    'Something went wrong',
+    'Please try again later',
+    'Unable to load conversation',
+    'I cannot generate',
+    'Sorry, I cannot',
+    'error in generating',
+    'failed to generate',
+  ];
+  for (const phrase of errorPhrases) {
+    if (pageText.includes(phrase) && !initialText.includes(phrase) && !prompt.includes(phrase)) {
+      return phrase;
+    }
+  }
+  return null;
+}
+
+/**
+ * Checks if the page contains rate limit texts.
+ */
+export function findRateLimitText(initialText: string, prompt: string): boolean {
+  const pageText = document.body.innerText || '';
+  // Only strong, unambiguous limit phrases. Loose phrases like "upgrade to" or
+  // "high demand" appear in ChatGPT's normal upsell UI after generating an image
+  // and were causing the whole queue to pause on a false positive.
+  const limitPhrases = [
+    "You've reached your limit",
+    'reached the limit for',
+    'Quota exceeded',
+    'Too many requests',
+    'Please wait before sending more messages',
+  ];
+  for (const phrase of limitPhrases) {
+    if (pageText.includes(phrase) && !initialText.includes(phrase) && !prompt.includes(phrase)) {
+      return true;
+    }
+  }
+  return false;
+}

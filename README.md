@@ -9,7 +9,7 @@
 Bulk-generate hundreds of images from a single prompt template — using your own
 ChatGPT and Gemini tabs, automated right inside your browser.
 
-Free &amp; open source · Chrome (Manifest V3) · built with [Plasmo](https://www.plasmo.com/)
+🌐 **[bulkshot.suryanshdev.xyz](https://bulkshot.suryanshdev.xyz)** · Free &amp; open source · Chrome (Manifest V3) · built with [Plasmo](https://www.plasmo.com/)
 
 </div>
 

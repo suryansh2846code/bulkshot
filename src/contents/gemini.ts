@@ -218,12 +218,23 @@ function injectText(textarea: HTMLElement, text: string) {
   }
 }
 
+function getLastMessageElement(): HTMLElement | null {
+  const msgContents = document.querySelectorAll('message-content, .model-response');
+  if (msgContents.length > 0) {
+    return msgContents[msgContents.length - 1] as HTMLElement;
+  }
+  return null;
+}
+
 function findNewImage(): string | null {
   // Host-agnostic detection: look for the largest NEW <img> that appeared after we
-  // sent the prompt. The big generated image is the new large one; UI icons/avatars
-  // are filtered out by size.
+  // sent the prompt. We restrict the search to the last assistant response element
+  // to avoid grabbing images from previous messages in the history.
+  const lastMsg = getLastMessageElement();
+  const searchRoot = lastMsg || document;
+
   const images: HTMLElement[] = [];
-  queryAllIncludingShadows('img', document, images);
+  queryAllIncludingShadows('img', searchRoot, images);
 
   let best: { src: string; area: number } | null = null;
   for (const el of images) {
@@ -248,10 +259,10 @@ function findNewImage(): string | null {
 
 function startMonitoring(initialText: string, prompt: string) {
   console.log('[Gemini CS] Starting DOM monitor loop...');
-  addLog('info', '[Content Script] DOM monitor loop starting in 3 seconds...');
+  addLog('info', '[Content Script] DOM monitor loop starting...');
   let checkedCount = 0;
   
-  // Give Gemini 3 seconds to register the prompt and transition to busy state
+  // Give Gemini 1 second to start registering the prompt state transition
   setTimeout(() => {
     monitorInterval = setInterval(async () => {
       checkedCount++;
@@ -278,17 +289,7 @@ function startMonitoring(initialText: string, prompt: string) {
         }
       }
 
-      // 1. Direct check: Has the new image already rendered in DOM?
-      const newImgSrc = findNewImage();
-      if (newImgSrc) {
-        console.log('[Gemini CS] New generated image detected directly in monitor loop:', newImgSrc);
-        await addLog('info', `[Content Script] Success: New generated image found in DOM!`);
-        await reportJobCompleted(newImgSrc);
-        stopMonitoring();
-        return;
-      }
-
-      // 2. Fallback: Detect generation state via loading/progress indicator or disabled send button
+      // Detect generation state via loading/progress indicator or disabled send button
       const progressIndicator = queryAny(SELECTORS.loadingIndicator);
       const sendBtn = queryAny(SELECTORS.sendButton);
       const isBusy = !!progressIndicator || (sendBtn && sendBtn.hasAttribute('disabled'));
@@ -301,25 +302,37 @@ function startMonitoring(initialText: string, prompt: string) {
         }
       }
 
-      // If we were generating, and we are no longer busy, look for the completed image
-      if (isGenerating && !isBusy) {
-        console.log('[Gemini CS] Generation stopped. Looking for completed image...');
-        await addLog('info', '[Content Script] Busy state cleared. Looking for generated image...');
-        // Brief 1.5s delay for image rendering in DOM
-        setTimeout(checkForCompletedImage, 1500);
-        stopMonitoring();
-        return;
+      // Only check for new image if the page is NOT currently busy generating
+      if (!isBusy) {
+        const newImgSrc = findNewImage();
+        if (newImgSrc) {
+          console.log('[Gemini CS] New generated image detected in monitor loop:', newImgSrc);
+          await addLog('info', `[Content Script] Success: New generated image found in DOM!`);
+          await reportJobCompleted(newImgSrc);
+          stopMonitoring();
+          return;
+        }
+
+        // If we were actively generating and the busy state cleared but image isn't found immediately,
+        // wait for a brief period and keep checking.
+        if (isGenerating) {
+          console.log('[Gemini CS] Generation stopped, waiting for image to render...');
+          await addLog('info', '[Content Script] Busy state cleared. Waiting for generated image...');
+          setTimeout(checkForCompletedImage, 1500);
+          stopMonitoring();
+          return;
+        }
       }
 
       // Safe fallback: If it's been 2.5 minutes and we haven't completed, check if image is already there
       if (checkedCount > 150) { 
         console.log('[Gemini CS] Timeout check: looking for image anyway...');
-        await addLog('warn', '[Content Script] 2.5 minutes elapsed without busy state clear. Checking for image anyway...');
+        await addLog('warn', '[Content Script] 2.5 minutes elapsed without completion. Checking for image anyway...');
         checkForCompletedImage();
         stopMonitoring();
       }
     }, 1000);
-  }, 3000);
+  }, 1000);
 }
 
 async function checkForCompletedImage() {

@@ -218,13 +218,28 @@ function injectText(textarea: HTMLElement, text: string) {
   }
 }
 
+function getLastMessageElement(): HTMLElement | null {
+  const articles = document.querySelectorAll('article');
+  if (articles.length > 0) {
+    return articles[articles.length - 1] as HTMLElement;
+  }
+  const turns = document.querySelectorAll('div[data-testid*="conversation-turn"]');
+  if (turns.length > 0) {
+    return turns[turns.length - 1] as HTMLElement;
+  }
+  return null;
+}
+
 function findNewImage(): string | null {
   // Host-agnostic detection: ChatGPT changes the image host/markup, so instead of
   // matching specific URL patterns we look for the largest NEW <img> that appeared
-  // after we sent the prompt. Each worker opens a fresh chat, so the big generated
-  // infographic is the new large image; UI icons/avatars are filtered out by size.
+  // after we sent the prompt. We restrict the search to the last message turn
+  // to avoid grabbing images from previous messages in the history.
+  const lastMsg = getLastMessageElement();
+  const searchRoot = lastMsg || document;
+
   const images: HTMLElement[] = [];
-  queryAllIncludingShadows('img', document, images);
+  queryAllIncludingShadows('img', searchRoot, images);
 
   let best: { src: string; area: number } | null = null;
   for (const el of images) {
@@ -249,10 +264,10 @@ function findNewImage(): string | null {
 
 function startMonitoring(initialText: string, prompt: string) {
   console.log('[ChatGPT CS] Starting DOM monitor loop...');
-  addLog('info', '[Content Script] DOM monitor loop starting in 3 seconds...');
+  addLog('info', '[Content Script] DOM monitor loop starting...');
   let checkedCount = 0;
   
-  // Give ChatGPT 3 seconds to register the prompt and transition to busy state
+  // Give ChatGPT 1 second to start registering the prompt state transition
   setTimeout(() => {
     monitorInterval = setInterval(async () => {
       checkedCount++;
@@ -279,17 +294,7 @@ function startMonitoring(initialText: string, prompt: string) {
         }
       }
 
-      // 1. Direct check: Has the new image already rendered in DOM?
-      const newImgSrc = findNewImage();
-      if (newImgSrc) {
-        console.log('[ChatGPT CS] New generated image detected directly in monitor loop:', newImgSrc);
-        await addLog('info', `[Content Script] Success: New generated image found in DOM!`);
-        await reportJobCompleted(newImgSrc);
-        stopMonitoring();
-        return;
-      }
-
-      // 2. Fallback: Detect generation state via loading/progress indicator or disabled send button
+      // Detect generation state via loading/progress indicator or disabled send button
       const progressIndicator = queryAny(SELECTORS.loadingIndicator);
       const sendBtn = queryAny(SELECTORS.sendButton);
       const isBusy = !!progressIndicator || (sendBtn && sendBtn.hasAttribute('disabled'));
@@ -302,25 +307,37 @@ function startMonitoring(initialText: string, prompt: string) {
         }
       }
 
-      // If we were generating, and we are no longer busy, look for the completed image
-      if (isGenerating && !isBusy) {
-        console.log('[ChatGPT CS] Generation stopped. Looking for completed image...');
-        await addLog('info', '[Content Script] Busy state cleared. Looking for generated image...');
-        // Brief 1.5s delay for image rendering in DOM
-        setTimeout(checkForCompletedImage, 1500);
-        stopMonitoring();
-        return;
+      // Only check for new image if the page is NOT currently busy generating
+      if (!isBusy) {
+        const newImgSrc = findNewImage();
+        if (newImgSrc) {
+          console.log('[ChatGPT CS] New generated image detected in monitor loop:', newImgSrc);
+          await addLog('info', `[Content Script] Success: New generated image found in DOM!`);
+          await reportJobCompleted(newImgSrc);
+          stopMonitoring();
+          return;
+        }
+
+        // If we were actively generating and the busy state cleared but image isn't found immediately,
+        // wait for a brief period and keep checking.
+        if (isGenerating) {
+          console.log('[ChatGPT CS] Generation stopped, waiting for image to render...');
+          await addLog('info', '[Content Script] Busy state cleared. Waiting for generated image...');
+          setTimeout(checkForCompletedImage, 1500);
+          stopMonitoring();
+          return;
+        }
       }
 
       // Safe fallback: If it's been 2.5 minutes and we haven't completed, check if image is already there
       if (checkedCount > 150) { 
         console.log('[ChatGPT CS] Timeout check: looking for image anyway...');
-        await addLog('warn', '[Content Script] 2.5 minutes elapsed without busy state clear. Checking for image anyway...');
+        await addLog('warn', '[Content Script] 2.5 minutes elapsed without completion. Checking for image anyway...');
         checkForCompletedImage();
         stopMonitoring();
       }
     }, 1000);
-  }, 3000);
+  }, 1000);
 }
 
 async function checkForCompletedImage() {

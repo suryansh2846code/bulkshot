@@ -8,7 +8,9 @@
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package",
-    "postinstall": "node scripts/copy-worker.js"
+    "postinstall": "node scripts/copy-worker.js",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   },
   "dependencies": {
     "@parcel/watcher": "^2.5.6",
@@ -28,7 +30,8 @@
     "@types/react-dom": "18.2.18",
     "postcss": "8.4.33",
     "prettier": "3.2.4",
-    "typescript": "5.3.3"
+    "typescript": "5.3.3",
+    "wrangler": "^4.103.0"
   },
   "manifest": {
     "permissions": [

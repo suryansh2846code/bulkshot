@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/iconfont/tabler-icons.min.css" />
 <script>
   // Set theme before first paint to avoid a flash.
   (function () {
@@ -84,7 +85,25 @@
 
   .features { display: flex; gap: 28px; max-width: 800px; margin: 40px auto 0; justify-content: center; }
   .feature { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
-  .feature .ico { font-size: 26px; line-height: 1; filter: saturate(.9); }
+  .feature-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: color-mix(in oklch, var(--accent) 12%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+  .feature-icon i {
+    font-size: 22px;
+    color: var(--accent);
+  }
+  .feature:hover .feature-icon {
+    transform: scale(1.1) rotate(5deg);
+    background: color-mix(in oklch, var(--accent) 18%, transparent);
+  }
   .feature h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .02em; color: var(--ink); }
   .feature p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--muted); max-width: 220px; }
 
@@ -194,9 +213,27 @@
         <p class="lede reveal">Generate hundreds of images in one calm sweep. Write a prompt template, drop in your variables, and let ChatGPT and Gemini fill the canvas — right inside your browser.</p>
 
         <div class="features reveal" id="features">
-          <div class="feature"><div class="ico">🧩</div><h3>Bulk Prompts</h3><p>Turn one template into hundreds of variations with a simple {} placeholder.</p></div>
-          <div class="feature"><div class="ico">🌿</div><h3>Two Models</h3><p>Generate with ChatGPT · DALL·E and Gemini · Imagen, split across parallel workers.</p></div>
-          <div class="feature"><div class="ico">📦</div><h3>Auto Download</h3><p>Each image saves itself the moment it's done — no manual right-clicking.</p></div>
+          <div class="feature">
+            <div class="feature-icon">
+              <i class="ti ti-replace"></i>
+            </div>
+            <h3>Bulk Prompts</h3>
+            <p>Turn one template into hundreds of variations with a simple {} placeholder.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">
+              <i class="ti ti-stack-2"></i>
+            </div>
+            <h3>Two Models</h3>
+            <p>Generate with ChatGPT · DALL·E and Gemini · Imagen, split across parallel workers.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">
+              <i class="ti ti-download"></i>
+            </div>
+            <h3>Auto Download</h3>
+            <p>Each image saves itself the moment it's done — no manual right-clicking.</p>
+          </div>
         </div>
 
         <div class="ctas reveal">

@@ -1,6 +1,7 @@
 import type { PlasmoCSConfig } from 'plasmo';
 import { SELECTORS, queryAny, queryAllIncludingShadows, findErrorText, findRateLimitText } from '../chatgpt/chatgptAutomation';
 import { addLog } from '../storage/storageHelper';
+import { attachReferenceImages } from '../shared/imageAttach';
 
 export const config: PlasmoCSConfig = {
   matches: ['https://chatgpt.com/*'],
@@ -21,7 +22,7 @@ const preExistingImageUrls = new Set<string>();
 if (window === window.top) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'START_GENERATION') {
-      startGenerationFlow(message.prompt);
+      startGenerationFlow(message.prompt, message.images);
       sendResponse({ status: 'started' });
     }
     return true;
@@ -102,10 +103,10 @@ async function waitForSendButton(timeoutMs = 10000): Promise<HTMLElement> {
   });
 }
 
-async function startGenerationFlow(prompt: string) {
+async function startGenerationFlow(prompt: string, images?: string[]) {
   console.log('[ChatGPT CS] Starting generation for prompt:', prompt);
   await addLog('info', `[Content Script] Received START_GENERATION command. Prompt length: ${prompt.length} chars.`);
-  
+
   if (monitorInterval) {
     clearInterval(monitorInterval);
   }
@@ -118,10 +119,34 @@ async function startGenerationFlow(prompt: string) {
     // 1. Wait for and locate prompt input
     await addLog('info', '[Content Script] Waiting for prompt input area to render...');
     const textarea = await waitForElement(SELECTORS.textarea, 30000);
+
+    // 1b. Attach reference images first (before the text) so they're uploading
+    // while we type. waitForSendButton below then waits out the upload.
+    if (images && images.length > 0) {
+      await attachReferenceImages(textarea, images, addLog, 'ChatGPT');
+      // Attaching an image re-renders the composer, which can detach the element
+      // we captured above. Give it a moment to settle before we re-locate it.
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
     await addLog('info', '[Content Script] Prompt input area found. Injecting text...');
 
-    // 2. Inject prompt text
-    injectText(textarea, prompt);
+    // 2. Inject prompt text into a FRESH reference to the composer (the old one
+    // may be stale after the attach re-render).
+    const injectTarget = queryAny(SELECTORS.textarea) || textarea;
+    injectText(injectTarget, prompt);
+
+    // Verify the prompt actually landed — if the attach wiped the editor we'd
+    // otherwise send an image with no prompt. Re-inject once if it looks empty.
+    if (prompt.trim().length >= 5) {
+      await new Promise((r) => setTimeout(r, 300));
+      const current = (queryAny(SELECTORS.textarea)?.innerText || '').trim();
+      if (current.length < 5) {
+        await addLog('warn', '[Content Script] Prompt looks empty after image attach. Re-injecting...');
+        const retryTarget = queryAny(SELECTORS.textarea);
+        if (retryTarget) injectText(retryTarget, prompt);
+      }
+    }
     await addLog('info', '[Content Script] Prompt text injected. Waiting for send button to enable...');
 
     // 3. Wait for send button to be enabled (background tabs are throttled, give it room)
@@ -219,6 +244,11 @@ function injectText(textarea: HTMLElement, text: string) {
 }
 
 function getLastMessageElement(): HTMLElement | null {
+  // Scope to the last conversation turn (the assistant's reply). We keep this
+  // BROAD (the whole article) because ChatGPT's image-gen output can render in a
+  // container outside the inner message-role div — narrowing it makes the
+  // generated image undetectable. The user's uploaded reference image is instead
+  // filtered out per-image via isInsideUserTurn() below.
   const articles = document.querySelectorAll('article');
   if (articles.length > 0) {
     return articles[articles.length - 1] as HTMLElement;
@@ -228,6 +258,20 @@ function getLastMessageElement(): HTMLElement | null {
     return turns[turns.length - 1] as HTMLElement;
   }
   return null;
+}
+
+// True if the element sits inside a user-authored message turn. Used to skip the
+// reference image the user uploaded (it renders in the user turn with a fresh URL
+// that isn't in our pre-send snapshot, so it would otherwise look "new").
+function isInsideUserTurn(el: HTMLElement): boolean {
+  let node: HTMLElement | null = el;
+  while (node) {
+    const role = node.getAttribute?.('data-message-author-role');
+    if (role === 'user') return true;
+    if (role === 'assistant') return false;
+    node = node.parentElement;
+  }
+  return false;
 }
 
 function findNewImage(): string | null {
@@ -247,6 +291,7 @@ function findNewImage(): string | null {
     const src = img.currentSrc || img.src;
     if (!src) continue;
     if (preExistingImageUrls.has(src)) continue;
+    if (isInsideUserTurn(img)) continue; // skip user-uploaded reference images
     if (src.includes('avatar') || src.includes('profile')) continue;
     if (src.startsWith('data:image/svg+xml')) continue;
     if (src.length < 30) continue;

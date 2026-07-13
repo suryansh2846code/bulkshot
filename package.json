@@ -33,6 +33,7 @@
   "manifest": {
     "permissions": [
       "storage",
+      "unlimitedStorage",
       "tabs",
       "downloads",
       "notifications",

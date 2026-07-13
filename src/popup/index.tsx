@@ -1,12 +1,44 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQueueState } from '../hooks/useQueueState';
 import { extractMovementsFromPDF, type ParsedMovement } from '../pdf/pdfParser';
+import { getReferenceImages, saveReferenceImages } from '../storage/storageHelper';
 import {
   buildTheme, Waves, MenuBar, Win, Provider, Seg, Stat, Badge, VarChip,
   PrimaryButton, GhostButton, DeskIcon, IcoComputer, IcoPulse, IcoFolder, IcoGear,
   TweaksPanel, SEM, MONO, type ThemeKey,
 } from '../ui/retro';
 import '../style.css';
+
+// Cap of how many reference images can be saved. Enough to steer style without
+// bloating storage or slowing every prompt's attach step.
+const MAX_REFERENCE_IMAGES = 8;
+
+// Downscale an uploaded image to `maxDim` on its longest side and return a data
+// URL. Reference images only need to convey style, so shrinking them keeps
+// chrome.storage light and the in-page attach fast. PNGs keep transparency;
+// everything else is re-encoded as JPEG.
+async function fileToResizedDataUrl(file: File, maxDim: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const width = Math.round(img.width * scale);
+      const height = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(null); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      const isPng = file.type === 'image/png';
+      resolve(isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.9));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
 
 export default function Popup() {
   const {
@@ -31,6 +63,13 @@ export default function Popup() {
   const [geminiWorkers, setGeminiWorkers] = useState(1);
   const [localTemplate, setLocalTemplate] = useState('');
 
+  // Reference images (stored separately from settings). `useRefImages` is the
+  // on/off toggle mirrored from settings; `refImages` is the list of data URLs.
+  const [refImages, setRefImages] = useState<string[]>([]);
+  const [useRefImages, setUseRefImages] = useState(false);
+  const [refBusy, setRefBusy] = useState(false);
+  const refInputRef = useRef<HTMLInputElement>(null);
+
   // Preview list
   const [previewMovements, setPreviewMovements] = useState<ParsedMovement[]>([]);
   const [selectedMovements, setSelectedMovements] = useState<Record<number, boolean>>({});
@@ -47,8 +86,12 @@ export default function Popup() {
       setChatgptWorkers(settings.chatgptWorkers);
       setGeminiWorkers(settings.geminiWorkers);
       setLocalTemplate(settings.promptTemplate);
+      setUseRefImages(settings.useReferenceImages);
     }
   }, [settings]);
+
+  // Reference images live under their own storage key, so load them directly.
+  useEffect(() => { getReferenceImages().then(setRefImages); }, []);
 
   // Auto-jump to Monitor when a run starts.
   useEffect(() => { if (state.isRunning) setView('Monitor'); }, [state.isRunning]);
@@ -68,9 +111,18 @@ export default function Popup() {
 
   // ---- handlers (unchanged logic) ----
   const handleLoadPastedJobs = () => {
-    const parsed = pastedText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    const raw = pastedText;
+    // Jobs are separated by TWO blank lines, so a single job can span multiple
+    // lines AND even contain a single blank line without being split. When there
+    // is no double-blank gap at all, fall back to the classic one-job-per-line
+    // mode so existing single-line lists keep working unchanged.
+    const hasJobSeparators = /\n[ \t]*\n[ \t]*\n/.test(raw); // two or more blank lines
+    const chunks = hasJobSeparators ? raw.split(/\n(?:[ \t]*\n){2,}/) : raw.split('\n');
+    const parsed = chunks
+      .map((c) => c.trim()) // trim outer whitespace but keep internal newlines
+      .filter((c) => c.length > 0)
       .map((name) => ({ movementName: name, englishName: '', category: '', targetMuscles: '' }));
-    if (parsed.length === 0) { alert('Please enter at least one job name.'); return; }
+    if (parsed.length === 0) { alert('Please enter at least one job.'); return; }
     setPreviewMovements(parsed);
     setPastedText('');
   };
@@ -87,6 +139,41 @@ export default function Popup() {
       console.error('Error parsing PDF:', err);
       alert('Failed to parse PDF. Please verify it is a valid text-based PDF.');
     } finally { setParsing(false); }
+  };
+
+  const handleRefImagesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
+    e.target.value = ''; // allow re-selecting the same file later
+    if (files.length === 0) return;
+    setRefBusy(true);
+    try {
+      const encoded = (await Promise.all(files.map((f) => fileToResizedDataUrl(f, 1536)))).filter(Boolean) as string[];
+      const next = [...refImages, ...encoded].slice(0, MAX_REFERENCE_IMAGES);
+      if (refImages.length + encoded.length > MAX_REFERENCE_IMAGES) {
+        alert(`Reference images are capped at ${MAX_REFERENCE_IMAGES}. Extra images were ignored.`);
+      }
+      setRefImages(next);
+      await saveReferenceImages(next);
+      // Turn the feature on automatically the first time images are added.
+      if (next.length > 0 && !useRefImages) { setUseRefImages(true); updateSettings({ useReferenceImages: true }); }
+    } catch (err) {
+      console.error('Failed to load reference images:', err);
+      alert('Failed to load one or more images.');
+    } finally { setRefBusy(false); }
+  };
+
+  const removeRefImage = async (i: number) => {
+    const next = refImages.filter((_, idx) => idx !== i);
+    setRefImages(next);
+    await saveReferenceImages(next);
+    if (next.length === 0 && useRefImages) { setUseRefImages(false); updateSettings({ useReferenceImages: false }); }
+  };
+
+  const toggleUseRefImages = () => {
+    if (refImages.length === 0) return;
+    const v = !useRefImages;
+    setUseRefImages(v);
+    updateSettings({ useReferenceImages: v });
   };
 
   const toggleSelect = (i: number) => setSelectedMovements((p) => ({ ...p, [i]: !p[i] }));
@@ -154,6 +241,38 @@ export default function Popup() {
                     <textarea spellCheck={false} value={localTemplate}
                       onChange={(e) => { setLocalTemplate(e.target.value); updateSettings({ promptTemplate: e.target.value }); }}
                       style={{ ...insetBox, width: '100%', height: 132, resize: 'none', padding: 12, fontSize: 12, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }} />
+
+                    {/* REFERENCE IMAGES — attached to every prompt for style consistency */}
+                    <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      {label('REFERENCE IMAGES — ATTACHED TO EVERY PROMPT')}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -9, cursor: refImages.length ? 'pointer' : 'not-allowed', opacity: refImages.length ? 1 : 0.4, fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: th.sub }}>
+                        <input type="checkbox" checked={useRefImages} disabled={refImages.length === 0} onChange={toggleUseRefImages} style={{ accentColor: accent, width: 14, height: 14 }} />
+                        ATTACH
+                      </label>
+                    </div>
+                    <input type="file" accept="image/*" multiple ref={refInputRef} onChange={handleRefImagesChange} style={{ display: 'none' }} />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {refImages.map((src, i) => (
+                        <div key={i} style={{ position: 'relative', width: 52, height: 52, border: `2px solid ${th.ink}`, borderRadius: 8, overflow: 'hidden', background: th.inset }}>
+                          <img src={src} alt={`ref ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: useRefImages ? 1 : 0.4 }} />
+                          <button onClick={() => removeRefImage(i)} title="Remove"
+                            style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, lineHeight: '13px', textAlign: 'center', padding: 0, border: `2px solid ${th.ink}`, borderRadius: '0 6px 0 6px', background: th.panel, color: SEM.failed, fontWeight: 700, fontSize: 10, cursor: 'pointer', fontFamily: MONO }}>✕</button>
+                        </div>
+                      ))}
+                      {refImages.length < MAX_REFERENCE_IMAGES && (
+                        <button onClick={() => refInputRef.current?.click()} disabled={refBusy}
+                          style={{ width: 52, height: 52, border: `2px dashed ${th.ink}`, borderRadius: 8, background: th.inset, color: th.ink, fontSize: 20, fontWeight: 700, cursor: refBusy ? 'wait' : 'pointer', display: 'grid', placeItems: 'center', fontFamily: MONO }}>
+                          {refBusy ? '…' : '+'}
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ fontFamily: MONO, fontSize: 10, color: th.sub, margin: '8px 0 0', lineHeight: 1.5 }}>
+                      {refImages.length === 0
+                        ? 'Add up to 8 images. Each is attached to every generation so the batch keeps a consistent style.'
+                        : useRefImages
+                          ? `${refImages.length} image(s) will be attached to every prompt.`
+                          : `${refImages.length} image(s) saved but not attached — tick ATTACH to use them.`}
+                    </p>
                   </Win>
 
                   {/* JOBS */}
@@ -166,7 +285,7 @@ export default function Popup() {
                     {inputTab === 'Paste Text' ? (
                       <>
                         <textarea spellCheck={false} value={pastedText} onChange={(e) => setPastedText(e.target.value)}
-                          placeholder={'Enter one job per line:\nSwastikasana\nPadmasana\nVajrasana'}
+                          placeholder={'One job per line:\nSwastikasana\nPadmasana\n\n— OR — for multi-line jobs, leave TWO blank\nlines between each job:\n\nSwastikasana\nseated, spine tall\n\n\nPadmasana\nlotus, hands in mudra'}
                           style={{ ...insetBox, width: '100%', height: 176, resize: 'none', padding: 12, fontSize: 12.5, lineHeight: 1.7, outline: 'none', boxSizing: 'border-box' }} />
                         <PrimaryButton th={th} accent={accent} onClick={handleLoadPastedJobs} style={{ marginTop: 12, width: '100%' }}>Load Job List →</PrimaryButton>
                       </>

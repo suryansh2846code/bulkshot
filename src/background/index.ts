@@ -1,6 +1,6 @@
 import offscreenUrl from 'url:~src/offscreen.html';
 import type { Job, ExtensionSettings, QueueState, QueueStats } from '../types';
-import { getSettings, saveSettings, getQueueState, saveQueueState, compilePrompt, addLog, getLogs, clearLogs } from '../storage/storageHelper';
+import { getSettings, saveSettings, getQueueState, saveQueueState, compilePrompt, addLog, getLogs, clearLogs, getReferenceImages } from '../storage/storageHelper';
 import { showNotification } from '../notifications/notificationHelper';
 import { downloadImage } from '../downloads/downloadHelper';
 
@@ -208,10 +208,18 @@ async function handleRuntimeMessage(message: any, sender: chrome.runtime.Message
         const job = state.jobs.find(j => j.id === jobId);
         if (job && job.status === 'running') {
           console.log(`[Background] Tab ready for job ${jobId}. Injecting prompt...`);
-          await addLog('info', `Tab ${senderTabId} loaded for "${job.movementName}". Injecting prompt...`);
+          // Attach saved reference images to every prompt when the option is on,
+          // so each generation shares the same style reference.
+          const referenceImages = settings.useReferenceImages ? await getReferenceImages() : [];
+          if (referenceImages.length > 0) {
+            await addLog('info', `Tab ${senderTabId} loaded for "${job.movementName}". Injecting prompt with ${referenceImages.length} reference image(s)...`);
+          } else {
+            await addLog('info', `Tab ${senderTabId} loaded for "${job.movementName}". Injecting prompt...`);
+          }
           chrome.tabs.sendMessage(senderTabId, {
             action: 'START_GENERATION',
-            prompt: job.prompt
+            prompt: job.prompt,
+            images: referenceImages,
           });
         }
       }

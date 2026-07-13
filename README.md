@@ -34,6 +34,8 @@ logged-in session. No API keys, no servers — everything runs locally in your b
 - ⚙️ **Per-provider workers** — choose how many tabs run in parallel for each provider.
 - 📄 **Flexible input** — paste one job per line, or upload a text-based PDF and
   BulkShot extracts the list. Edit, search, add, and select before launching.
+- 🖼️ **Reference images** — attach up to 8 style-reference images that get sent with
+  *every* prompt, so a whole batch keeps a consistent look. Toggle on/off any time.
 - 📦 **Auto download** — each image saves to your Downloads folder the moment it's
   ready, tagged by provider — no manual right-clicking, no waiting for the batch.
 - 🔁 **Resilient queue** — automatic retries, manual pause/resume/stop, live progress,

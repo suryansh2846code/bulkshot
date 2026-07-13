@@ -34,6 +34,10 @@ export interface ExtensionSettings {
   // When true, the whole queue pauses if a provider reports a rate limit.
   // When false (default), the rate-limited job just fails/moves on and the queue keeps going.
   pauseOnRateLimit: boolean;
+  // When true, the saved reference images are attached to every prompt (for style
+  // consistency across the batch). The image data itself lives under a separate
+  // storage key (`referenceImages`) so it isn't broadcast on every state update.
+  useReferenceImages: boolean;
   // Retro "BulkShot" UI theme tweaks (persisted so popup + options stay in sync).
   uiTheme: 'Paper' | 'Dusk';
   uiAccent: string;
@@ -70,7 +74,7 @@ export type ExtensionMessage =
   | { action: 'JOB_RATE_LIMITED' }
   | { action: 'DOWNLOAD_COMPLETE'; success: boolean; error?: string }
   | { action: 'STATE_UPDATED'; state: QueueState; stats: QueueStats; settings: ExtensionSettings }
-  | { action: 'START_GENERATION'; prompt: string };
+  | { action: 'START_GENERATION'; prompt: string; images?: string[] };
 
 export interface LogEntry {
   timestamp: number;

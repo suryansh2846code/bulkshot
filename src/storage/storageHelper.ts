@@ -121,6 +121,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   promptTemplate: DEFAULT_PROMPT_TEMPLATE,
   closeTabOnComplete: true,
   pauseOnRateLimit: false,
+  useReferenceImages: false,
   uiTheme: 'Paper',
   uiAccent: 'oklch(0.62 0.085 215)',
   uiWaves: true,
@@ -160,6 +161,32 @@ export async function getQueueState(): Promise<QueueState> {
 export async function saveQueueState(state: QueueState): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.local.set({ queueState: state }, () => {
+      resolve();
+    });
+  });
+}
+
+// Reference images are stored separately from `settings` (as an array of data URLs)
+// so their potentially-large payload isn't attached to every broadcasted state update.
+export async function getReferenceImages(): Promise<string[]> {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(['referenceImages'], (result) => {
+        resolve(Array.isArray(result.referenceImages) ? result.referenceImages : []);
+      });
+    } catch (e) {
+      console.warn('Failed to get reference images:', e);
+      resolve([]);
+    }
+  });
+}
+
+export async function saveReferenceImages(images: string[]): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ referenceImages: images }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save reference images:', chrome.runtime.lastError.message);
+      }
       resolve();
     });
   });

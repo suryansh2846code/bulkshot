@@ -48,6 +48,7 @@ export default function Popup() {
 
   const [view, setView] = useState<'Console' | 'Monitor'>('Console');
   const [showLogs, setShowLogs] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Job input
   const [inputTab, setInputTab] = useState<'Paste Text' | 'Upload PDF'>('Paste Text');
@@ -226,6 +227,74 @@ export default function Popup() {
 
             {view === 'Console' ? (
               <>
+                {/* HOW TO USE — prompt & input quick guide */}
+                <Win th={th} title="how to use — prompt & input">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ fontFamily: MONO, fontSize: 11.5, color: th.sub, lineHeight: 1.5 }}>
+                      New here? A 30-second guide to writing a prompt and feeding it your job list.
+                    </div>
+                    <button onClick={() => setShowHelp((p) => !p)}
+                      style={{ ...insetBox, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', background: showHelp ? th.accentSoft : th.inset }}>
+                      {showHelp ? 'Hide guide ▲' : 'Show guide ▼'}
+                    </button>
+                  </div>
+
+                  {showHelp && (
+                    <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* STEP 1 — prompt */}
+                      <div>
+                        <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: th.ink, marginBottom: 6 }}>1 · Write a prompt template</div>
+                        <div style={{ fontFamily: MONO, fontSize: 11.5, color: th.sub, lineHeight: 1.6, marginBottom: 8 }}>
+                          Write your prompt once and drop a placeholder where each job name should go.
+                          The placeholder is swapped for the job name on every generation.
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                          <VarChip th={th} soft>{'{}'}</VarChip>
+                          <VarChip th={th}>{'{{ITEM}}'}</VarChip>
+                          <VarChip th={th}>{'{{POSE_NAME}}'}</VarChip>
+                          <VarChip th={th}>{'{anything}'}</VarChip>
+                        </div>
+                        <div style={{ ...insetBox, padding: 10, fontSize: 11.5, lineHeight: 1.6, background: th.inset }}>
+                          <span style={{ color: th.sub }}>A clean anatomy infographic of the </span>
+                          <span style={{ color: accent, fontWeight: 700 }}>{'{}'}</span>
+                          <span style={{ color: th.sub }}> yoga pose, labelled muscles.</span>
+                          <div style={{ marginTop: 6, color: th.sub }}>→ for <b style={{ color: th.ink }}>Padmasana</b> becomes:</div>
+                          <div style={{ marginTop: 2 }}>A clean anatomy infographic of the <b style={{ color: th.ink }}>Padmasana</b> yoga pose, labelled muscles.</div>
+                        </div>
+                      </div>
+
+                      {/* STEP 2 — input */}
+                      <div>
+                        <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: th.ink, marginBottom: 6 }}>2 · Add your job list (the input)</div>
+                        <div style={{ fontFamily: MONO, fontSize: 11.5, color: th.sub, lineHeight: 1.6, marginBottom: 8 }}>
+                          Each job replaces the placeholder once. Paste <b style={{ color: th.ink }}>one job per line</b>,
+                          or upload a text-based PDF. For jobs that span multiple lines, leave
+                          <b style={{ color: th.ink }}> two blank lines</b> between them.
+                        </div>
+                        <div style={{ ...insetBox, padding: 10, fontSize: 11.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', background: th.inset, color: th.ink }}>
+{`Padmasana
+Swastikasana
+Vrikshasana`}
+                        </div>
+                      </div>
+
+                      {/* STEP 3 — run */}
+                      <div>
+                        <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: th.ink, marginBottom: 6 }}>3 · Load → select → start</div>
+                        <div style={{ fontFamily: MONO, fontSize: 11.5, color: th.sub, lineHeight: 1.6 }}>
+                          Hit <b style={{ color: th.ink }}>Load Job List</b>, tick the jobs you want in the preview, then
+                          <b style={{ color: th.ink }}> Start Generation Queue</b>. Watch progress in the Monitor tab —
+                          finished images download automatically.
+                        </div>
+                      </div>
+
+                      <div style={{ fontFamily: MONO, fontSize: 10.5, color: th.sub, lineHeight: 1.5, borderTop: `2px dotted ${th.ink}`, paddingTop: 10 }}>
+                        Tip: any bracketed token works — <VarChip th={th}>{'{}'}</VarChip> <VarChip th={th}>{'{{POSE_NAME}}'}</VarChip> <VarChip th={th}>{'{pose name}'}</VarChip> are all replaced with the job name. Make sure you're logged in to ChatGPT / Gemini first.
+                      </div>
+                    </div>
+                  )}
+                </Win>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
                   {/* CONFIG */}
                   <Win th={th} title="config — providers & prompt" style={{ minWidth: 0 }}>

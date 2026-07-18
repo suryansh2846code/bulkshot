@@ -195,20 +195,24 @@ export async function saveReferenceImages(images: string[]): Promise<void> {
 export function compilePrompt(template: string, job: Omit<Job, 'prompt' | 'provider'>): string {
   const primaryInput = job.movementName || '';
 
-  // 1. Replace the specific fields first
+  // 1. Replace the specific fields first. Tolerate whitespace inside the braces and
+  //    either a space or underscore in the name (e.g. `{{ ENGLISH_NAME }}`, `{ENGLISH NAME}`).
   let compiled = template
-    .replace(/\{+ENGLISH_NAME\}+/gi, job.englishName || '')
-    .replace(/\{+CATEGORY\}+/gi, job.category || '')
-    .replace(/\{+TARGET_MUSCLES\}+/gi, job.targetMuscles || '');
+    .replace(/\{+\s*ENGLISH[_ ]?NAME\s*\}+/gi, job.englishName || '')
+    .replace(/\{+\s*CATEGORY\s*\}+/gi, job.category || '')
+    .replace(/\{+\s*TARGET[_ ]?MUSCLES\s*\}+/gi, job.targetMuscles || '');
 
   // 2. Replace the bare `{}` placeholder with the variable content (the job/movement name).
   //    This lets users write a free-form prompt and mark exactly where the value goes, e.g.
   //    "Generate an anatomy infographic for {}". Only text inside `{}` is substituted.
   compiled = compiled.replace(/\{\s*\}/g, primaryInput);
 
-  // 3. Replace ANY other custom bracketed variable (e.g. {digit}, {{pose}}, {anything}) with the primary input
-  compiled = compiled.replace(/\{+([a-zA-Z0-9_\-]+)\}+/g, (match, varName) => {
-    const upperVar = varName.toUpperCase();
+  // 3. Replace ANY other custom bracketed variable (e.g. {digit}, {{pose}}, {{ POSE_NAME }},
+  //    {POSE NAME}) with the primary input. We allow spaces both around and inside the name so
+  //    a placeholder like `{{ POSE_NAME }}` or `{pose name}` still gets substituted instead of
+  //    being sent to the model literally.
+  compiled = compiled.replace(/\{+\s*([a-zA-Z0-9_\- ]+?)\s*\}+/g, (match, varName) => {
+    const upperVar = varName.trim().toUpperCase().replace(/\s+/g, '_');
     if (upperVar === 'ENGLISH_NAME' || upperVar === 'CATEGORY' || upperVar === 'TARGET_MUSCLES') {
       return '';
     }

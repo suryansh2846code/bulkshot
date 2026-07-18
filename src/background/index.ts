@@ -450,12 +450,16 @@ async function handleJobSuccess(jobId: string, imageUrl: string, imageData?: str
     // Trigger auto-download if enabled (tag with provider so ChatGPT/Gemini outputs are distinguishable).
     // Prefer the in-page data URL: blob: URLs from the worker tab are not reachable from the background.
     if (settings.autoDownload) {
-      const downloadSource = imageData || imageUrl;
-      const ok = await downloadImage(downloadSource, `${job.movementName} (${job.provider})`);
+      // Try the in-page data URL first (works for blob: images that the service
+      // worker can't reach), then fall back to the raw remote URL if that fails
+      // (e.g. the in-page fetch was CORS-blocked and no data URL was produced).
+      const sources = [imageData, imageUrl].filter((s): s is string => !!s);
+      const ok = await downloadImage(sources, `${job.movementName} (${job.provider})`);
       if (ok) {
         await addLog('info', `Downloaded image for "${job.movementName}" (${job.provider.toUpperCase()}).`);
       } else {
-        await addLog('error', `Download failed for "${job.movementName}" (${job.provider.toUpperCase()}). Source type: ${downloadSource.slice(0, 12)}…`);
+        const kind = imageData ? 'data-url' : imageUrl.startsWith('blob:') ? 'blob-url' : 'remote-url';
+        await addLog('error', `Download failed for "${job.movementName}" (${job.provider.toUpperCase()}). Tried: ${kind}.`);
       }
     }
 

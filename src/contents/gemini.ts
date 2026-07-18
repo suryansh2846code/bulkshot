@@ -244,10 +244,26 @@ function injectText(textarea: HTMLElement, text: string) {
 }
 
 function getLastMessageElement(): HTMLElement | null {
-  const msgContents = document.querySelectorAll('message-content, .model-response');
-  if (msgContents.length > 0) {
-    return msgContents[msgContents.length - 1] as HTMLElement;
+  // Scope BROADLY to the whole model-response turn. Gemini renders the generated
+  // image inside a container (e.g. <single-image>, generated-image) that is a
+  // SIBLING of the text bubble (<message-content>), NOT a child of it. Scoping to
+  // message-content alone — as before — meant findNewImage() searched only the
+  // text bubble, never saw the image, and every Gemini job timed out without
+  // downloading. We therefore target the outer turn/response container instead.
+  const broadSelectors = [
+    '.conversation-container',
+    'model-response',
+    '.model-response',
+    'response-container',
+    '.response-container',
+  ];
+  for (const sel of broadSelectors) {
+    const els = document.querySelectorAll(sel);
+    if (els.length > 0) return els[els.length - 1] as HTMLElement;
   }
+  // No known container matched — return null so findNewImage() falls back to
+  // scanning the whole document (still safe: the pre-send snapshot excludes every
+  // image that already existed, so only the new generated image can match).
   return null;
 }
 
@@ -303,11 +319,11 @@ function startMonitoring(initialText: string, prompt: string) {
   addLog('info', '[Content Script] DOM monitor loop starting...');
   let checkedCount = 0;
   
-  // Give Gemini 1 second to start registering the prompt state transition
+  // Short lead-in before the first poll so the prompt state transition can begin.
   setTimeout(() => {
     monitorInterval = setInterval(async () => {
       checkedCount++;
-      
+
       // Check for Rate Limit
       if (findRateLimitText(initialText, prompt)) {
         console.warn('[Gemini CS] Rate limit detected!');
@@ -330,50 +346,39 @@ function startMonitoring(initialText: string, prompt: string) {
         }
       }
 
-      // Detect generation state via loading/progress indicator or disabled send button
+      // Track busy state purely for logging. We deliberately do NOT gate image
+      // detection on it: Gemini keeps its progress bar / disabled send button up
+      // for a while AFTER the image has already rendered, so waiting for "not
+      // busy" added a long, needless delay before the job was marked complete.
       const progressIndicator = queryAny(SELECTORS.loadingIndicator);
       const sendBtn = queryAny(SELECTORS.sendButton);
       const isBusy = !!progressIndicator || (sendBtn && sendBtn.hasAttribute('disabled'));
-      
-      if (isBusy) {
-        if (!isGenerating) {
-          console.log('[Gemini CS] Generation started (busy indicator/disabled send button detected)');
-          await addLog('info', '[Content Script] Generation started (loading/busy state detected).');
-          isGenerating = true;
-        }
+      if (isBusy && !isGenerating) {
+        isGenerating = true;
+        await addLog('info', '[Content Script] Generation started (loading/busy state detected).');
       }
 
-      // Only check for new image if the page is NOT currently busy generating
-      if (!isBusy) {
-        const newImgSrc = findNewImage();
-        if (newImgSrc) {
-          console.log('[Gemini CS] New generated image detected in monitor loop:', newImgSrc);
-          await addLog('info', `[Content Script] Success: New generated image found in DOM!`);
-          await reportJobCompleted(newImgSrc);
-          stopMonitoring();
-          return;
-        }
-
-        // If we were actively generating and the busy state cleared but image isn't found immediately,
-        // wait for a brief period and keep checking.
-        if (isGenerating) {
-          console.log('[Gemini CS] Generation stopped, waiting for image to render...');
-          await addLog('info', '[Content Script] Busy state cleared. Waiting for generated image...');
-          setTimeout(checkForCompletedImage, 1500);
-          stopMonitoring();
-          return;
-        }
+      // Check for the finished image on EVERY tick. The presence of a new, large
+      // image in the model response IS the completion signal — as soon as it's in
+      // the DOM we report it, regardless of the lingering busy indicators.
+      const newImgSrc = findNewImage();
+      if (newImgSrc) {
+        console.log('[Gemini CS] New generated image detected in monitor loop:', newImgSrc);
+        await addLog('info', '[Content Script] Success: New generated image found in DOM!');
+        await reportJobCompleted(newImgSrc);
+        stopMonitoring();
+        return;
       }
 
-      // Safe fallback: If it's been 2.5 minutes and we haven't completed, check if image is already there
-      if (checkedCount > 150) { 
+      // Safe fallback: after ~2.5 minutes, do one last check and give up if nothing.
+      if (checkedCount > 200) {
         console.log('[Gemini CS] Timeout check: looking for image anyway...');
         await addLog('warn', '[Content Script] 2.5 minutes elapsed without completion. Checking for image anyway...');
         checkForCompletedImage();
         stopMonitoring();
       }
-    }, 1000);
-  }, 1000);
+    }, 750);
+  }, 700);
 }
 
 async function checkForCompletedImage() {
